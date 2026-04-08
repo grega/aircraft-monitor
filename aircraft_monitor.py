@@ -107,7 +107,7 @@ def get_flights_in_radius(lat, lon, radius_km=RADIUS_KM):
     """Fetch all flights within a given radius."""
     url = f"{API_ENDPOINT}/flights-in-radius?lat={lat}&lon={lon}&radius={radius_km}"
     headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
+        "X-API-Key": API_TOKEN,
         "User-Agent": "aircraft-monitor",
     }
     print(f"Fetching flights from: {url}")
