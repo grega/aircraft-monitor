@@ -40,4 +40,28 @@ Alert thresholds not met. Skipping email.
 ---
 ```
 
-Alerts will be sent via email if they meet the criteria defined in the `.env` file (eg. distance, altitude, est. time from location).
+## Deploy to Dokku
+
+See [docs/deploying-to-dokku.md](docs/deploying-to-dokku.md) for instructions on deploying to a Dokku server.
+
+## Alerts
+
+Alerts are sent when a detected aircraft meets the thresholds defined in `.env` (distance, altitude, and estimated time to closest approach).
+
+Supported alert channels (configured via `ALERT_CHANNELS` in `.env`):
+
+- Email - via [Postmark](https://postmarkapp.com)
+- ntfy - push notifications via a self-hosted [ntfy](https://ntfy.sh) instance (see [ntfy-dokku](https://github.com/grega/ntfy-dokku) for Dokku deployment)
+
+You can enable one or both channels:
+
+```bash
+# Email only (default)
+ALERT_CHANNELS=email
+
+# ntfy only
+ALERT_CHANNELS=ntfy
+
+# Both
+ALERT_CHANNELS=email,ntfy
+```

@@ -1,4 +1,6 @@
 import math
+import signal
+import sys
 import time
 import os
 import requests
@@ -15,13 +17,27 @@ RADIUS_KM = int(os.getenv("RADIUS_KM", 50))
 LOW_ALTITUDE_THRESHOLD_M = int(os.getenv("LOW_ALTITUDE_THRESHOLD_M", 1000))
 TARGET_AIRCRAFT_CODE = os.getenv("TARGET_AIRCRAFT_CODE")
 
+ALERT_CHANNELS = os.getenv("ALERT_CHANNELS", "email").lower().split(",")
+
 POSTMARK_API_TOKEN = os.getenv("POSTMARK_API_TOKEN")
 ALERT_EMAIL_FROM = os.getenv("ALERT_EMAIL_FROM")
 ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO")
 
+NTFY_URL = os.getenv("NTFY_URL")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "aircraft-alerts")
+NTFY_TOKEN = os.getenv("NTFY_TOKEN")
+
 ALERT_DISTANCE_THRESHOLD_KM = float(os.getenv("ALERT_DISTANCE_THRESHOLD_KM", 50))
 ALERT_TIME_THRESHOLD_MIN = float(os.getenv("ALERT_TIME_THRESHOLD_MIN", 30))
 ALERT_ALTITUDE_THRESHOLD_M = float(os.getenv("ALERT_ALTITUDE_THRESHOLD_M", 1000))
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 30))
+
+def shutdown_handler(signum, frame):
+    print("Received shutdown signal, exiting.")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, shutdown_handler)
+signal.signal(signal.SIGINT, shutdown_handler)
 
 def feet_to_meters(feet):
     """Convert altitude from feet to meters."""
@@ -45,6 +61,35 @@ def send_email_alert(subject, message):
     except Exception as e:
         print(f"Failed to send email alert: {e}")
 
+def send_ntfy_alert(subject, message):
+    """Send a push notification via ntfy."""
+    try:
+        headers = {
+            "Title": subject,
+            "Priority": "high",
+            "Tags": "airplane,warning",
+        }
+        if NTFY_TOKEN:
+            headers["Authorization"] = f"Bearer {NTFY_TOKEN}"
+        response = requests.post(
+            f"{NTFY_URL}/{NTFY_TOPIC}",
+            data=message,
+            headers=headers,
+        )
+        if response.ok:
+            print("ntfy alert sent successfully!")
+        else:
+            print(f"Failed to send ntfy alert: {response.status_code} {response.text}")
+    except Exception as e:
+        print(f"Failed to send ntfy alert: {e}")
+
+def send_alert(subject, message):
+    """Send alerts via all configured channels."""
+    if "email" in ALERT_CHANNELS:
+        send_email_alert(subject, message)
+    if "ntfy" in ALERT_CHANNELS:
+        send_ntfy_alert(subject, message)
+
 def should_send_alert(flight, lat, lon):
     """Check if the flight meets the alert thresholds."""
     altitude_ft = flight["position"].get("altitude", float("inf"))
@@ -61,7 +106,10 @@ def should_send_alert(flight, lat, lon):
 def get_flights_in_radius(lat, lon, radius_km=RADIUS_KM):
     """Fetch all flights within a given radius."""
     url = f"{API_ENDPOINT}/flights-in-radius?lat={lat}&lon={lon}&radius={radius_km}"
-    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {API_TOKEN}",
+        "User-Agent": "aircraft-monitor",
+    }
     print(f"Fetching flights from: {url}")
     response = requests.get(url, headers=headers)
     print(f"Response status: {response.status_code}")
@@ -133,7 +181,7 @@ def time_until_closest(flight, lat, lon):
 
     return t_cpa * 60
 
-def monitor_flights(lat, lon, radius_km=RADIUS_KM, poll_interval=30):
+def monitor_flights(lat, lon, radius_km=RADIUS_KM, poll_interval=POLL_INTERVAL):
     """Monitor flights and alert for target aircraft, highlighting low-altitude ones."""
     print(f"Monitoring for {TARGET_AIRCRAFT_CODE}s within {radius_km}km of ({lat}, {lon})...")
     while True:
@@ -163,18 +211,18 @@ def monitor_flights(lat, lon, radius_km=RADIUS_KM, poll_interval=30):
                             f"at {altitude_m:.0f}m, {distance_km:.1f}km away, "
                             f"{minutes_until_closest:.1f} minutes until closest approach."
                         )
-                        print(alert_message)
                     else:
-                        print(
+                        alert_message = (
                             f"ℹ️ {TARGET_AIRCRAFT_CODE} detected: {flight_id} "
                             f"at {altitude_m:.0f}m, {distance_km:.1f}km away, "
                             f"{minutes_until_closest:.1f} minutes until closest approach."
                         )
+                    print(alert_message)
 
                     if should_send_alert(flight, lat, lon):
-                        send_email_alert(f"Aircraft {TARGET_AIRCRAFT_CODE} Alert", alert_message)
+                        send_alert(f"Aircraft {TARGET_AIRCRAFT_CODE} Alert", alert_message)
                     else:
-                        print("Alert thresholds not met. Skipping email.")
+                        print("Alert thresholds not met. Skipping alert.")
 
                 print("---")
             else:
