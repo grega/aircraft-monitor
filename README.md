@@ -17,7 +17,7 @@ pip install -r requirements.txt
 
 Ensure to have the [Flight Finder API](https://github.com/grega/flight-finder) running and accessible at the URL specified in the `.env` file.
 
-Then run the flight monitor script:
+Then run the monitor script:
 
 ```
 python aircraft_monitor.py
@@ -50,8 +50,8 @@ Alerts are sent when a detected aircraft meets the thresholds defined in `.env` 
 
 Supported alert channels (configured via `ALERT_CHANNELS` in `.env`):
 
-- Email - via [Postmark](https://postmarkapp.com)
-- ntfy - push notifications via a self-hosted [ntfy](https://ntfy.sh) instance (see [ntfy-dokku](https://github.com/grega/ntfy-dokku) for Dokku deployment)
+- Email: via [Postmark](https://postmarkapp.com)
+- ntfy: push notifications via a self-hosted [ntfy](https://ntfy.sh) instance (see [ntfy-dokku](https://github.com/grega/ntfy-dokku) for Dokku deployment)
 
 You can enable one or both channels:
 
