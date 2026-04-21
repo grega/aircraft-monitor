@@ -111,9 +111,14 @@ def get_flights_in_radius(lat, lon, radius_km=RADIUS_KM):
         "User-Agent": "aircraft-monitor",
     }
     print(f"Fetching flights from: {url}")
-    response = requests.get(url, headers=headers)
-    print(f"Response status: {response.status_code}")
-    return response.json()
+    try:
+        response = requests.get(url, headers=headers, timeout=(10, 60))
+        print(f"Response status: {response.status_code}")
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException, ValueError) as e:
+        print(f"Failed to fetch flights: {e}")
+        return None
 
 def is_target_aircraft(flight):
     """Check if the flight matches the target aircraft code."""
@@ -185,48 +190,54 @@ def monitor_flights(lat, lon, radius_km=RADIUS_KM, poll_interval=POLL_INTERVAL):
     """Monitor flights and alert for target aircraft, highlighting low-altitude ones."""
     print(f"Monitoring for {TARGET_AIRCRAFT_CODE}s within {radius_km}km of ({lat}, {lon})...")
     while True:
-        flights_data = get_flights_in_radius(lat, lon, radius_km)
-        print(f"Found {len(flights_data.get('flights', []))} flights in radius.")
-        if flights_data.get("found"):
-            target_aircrafts_found = []
-            for flight in flights_data["flights"]:
-                if is_target_aircraft(flight):
-                    target_aircrafts_found.append(flight)
+        try:
+            flights_data = get_flights_in_radius(lat, lon, radius_km)
+            if flights_data is None:
+                time.sleep(poll_interval)
+                continue
+            print(f"Found {len(flights_data.get('flights', []))} flights in radius.")
+            if flights_data.get("found"):
+                target_aircrafts_found = []
+                for flight in flights_data["flights"]:
+                    if is_target_aircraft(flight):
+                        target_aircrafts_found.append(flight)
 
-            if target_aircrafts_found:
-                print(f"\n--- {len(target_aircrafts_found)} {TARGET_AIRCRAFT_CODE}(s) detected ---")
-                for flight in target_aircrafts_found:
-                    flight_id = next(
-                        (v for v in [flight.get("number"), flight.get("callsign"), flight.get("icao_24bit")] if v and v != "N/A"),
-                        "N/A"
-                    )
-                    altitude_ft = flight["position"].get("altitude", "unknown")
-                    altitude_m = feet_to_meters(altitude_ft) if altitude_ft != "unknown" else "unknown"
-                    distance_km = calculate_distance(flight, lat, lon)
-                    minutes_until_closest = time_until_closest(flight, lat, lon)
-
-                    if is_low_altitude(flight):
-                        alert_message = (
-                            f"🚨 LOW ALTITUDE ALERT: {TARGET_AIRCRAFT_CODE} {flight_id} "
-                            f"at {altitude_m:.0f}m, {distance_km:.1f}km away, "
-                            f"{minutes_until_closest:.1f} minutes until closest approach."
+                if target_aircrafts_found:
+                    print(f"\n--- {len(target_aircrafts_found)} {TARGET_AIRCRAFT_CODE}(s) detected ---")
+                    for flight in target_aircrafts_found:
+                        flight_id = next(
+                            (v for v in [flight.get("number"), flight.get("callsign"), flight.get("icao_24bit")] if v and v != "N/A"),
+                            "N/A"
                         )
-                    else:
-                        alert_message = (
-                            f"ℹ️ {TARGET_AIRCRAFT_CODE} detected: {flight_id} "
-                            f"at {altitude_m:.0f}m, {distance_km:.1f}km away, "
-                            f"{minutes_until_closest:.1f} minutes until closest approach."
-                        )
-                    print(alert_message)
+                        altitude_ft = flight["position"].get("altitude", "unknown")
+                        altitude_m = feet_to_meters(altitude_ft) if altitude_ft != "unknown" else "unknown"
+                        distance_km = calculate_distance(flight, lat, lon)
+                        minutes_until_closest = time_until_closest(flight, lat, lon)
 
-                    if should_send_alert(flight, lat, lon):
-                        send_alert(f"Aircraft {TARGET_AIRCRAFT_CODE} Alert", alert_message)
-                    else:
-                        print("Alert thresholds not met. Skipping alert.")
+                        if is_low_altitude(flight):
+                            alert_message = (
+                                f"🚨 LOW ALTITUDE ALERT: {TARGET_AIRCRAFT_CODE} {flight_id} "
+                                f"at {altitude_m:.0f}m, {distance_km:.1f}km away, "
+                                f"{minutes_until_closest:.1f} minutes until closest approach."
+                            )
+                        else:
+                            alert_message = (
+                                f"ℹ️ {TARGET_AIRCRAFT_CODE} detected: {flight_id} "
+                                f"at {altitude_m:.0f}m, {distance_km:.1f}km away, "
+                                f"{minutes_until_closest:.1f} minutes until closest approach."
+                            )
+                        print(alert_message)
 
-                print("---")
-            else:
-                print(f"No {TARGET_AIRCRAFT_CODE}s detected in this poll.")
+                        if should_send_alert(flight, lat, lon):
+                            send_alert(f"Aircraft {TARGET_AIRCRAFT_CODE} Alert", alert_message)
+                        else:
+                            print("Alert thresholds not met. Skipping alert.")
+
+                    print("---")
+                else:
+                    print(f"No {TARGET_AIRCRAFT_CODE}s detected in this poll.")
+        except Exception as e:
+            print(f"Error during poll: {e}")
         time.sleep(poll_interval)
 
 if __name__ == "__main__":
